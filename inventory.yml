@@ -1,0 +1,14 @@
+
+all:
+  hosts:
+    dns:
+      ansible_host: 192.168.58.10
+    dhcp:
+      ansible_host: 192.168.58.20
+  children:
+    dns_servers:
+      hosts:
+        dns:
+    dhcp_servers:
+      hosts:
+        dhcp:
