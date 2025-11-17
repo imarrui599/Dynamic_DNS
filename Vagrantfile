@@ -29,4 +29,12 @@ Vagrant.configure("2") do |config|
     vb.customize ["modifyvm", :id, "--memory", "1024"]
     vb.customize ["modifyvm", :id, "--cpus", "1"]
   end
+  
+  config.vm.provision "ansible" do |ansible|
+  # Usar el inventario local que definimos
+  ansible.inventory_path = "inventory.yml" 
+  
+  # Ejecutar un playbook maestro que incluye los otros
+  ansible.playbook = "playbooks/site.yml" 
+  end
 end
