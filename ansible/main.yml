@@ -1,0 +1,157 @@
+- name: Configure the BIND9 DNS Server
+  hosts: dns_servers
+  become: yes
+  
+  pre_tasks:
+    - name: Ensure BIND9 and utilities are installed
+      ansible.builtin.apt:
+        name: 
+          - bind9
+          - bind9utils
+        state: present
+        update_cache: yes
+
+  tasks:
+    
+    - name: Generate the TSIG security key if it does not exist
+      ansible.builtin.command:
+        cmd: tsig-keygen -a hmac-sha256 ddns-key > /etc/bind/ddns.key
+        creates: /etc/bind/ddns.key
+    
+    - name: Set correct permissions on the TSIG key
+      ansible.builtin.file:
+        path: /etc/bind/ddns.key
+        group: bind
+        mode: '0640'
+
+    - name: Fetch the generated TSIG key to the Ansible controller
+      ansible.builtin.fetch:
+        src: /etc/bind/ddns.key
+        dest: "ansible/fetched_keys/ddns.key"
+        flat: yes
+                
+    - name: Include the DDNS key in the BIND9 options file
+      ansible.builtin.blockinfile:
+        path: /etc/bind/named.conf.options
+        marker: "# {mark} ANSIBLE MANAGED DDNS KEY"
+        block: |
+          include "/etc/bind/ddns.key";
+        state: present
+        insertafter: 'options {'
+
+    - name: Create the initial forward zone file (db.example.test)
+      ansible.builtin.copy:
+        content: |
+          $TTL 604800
+          @   IN  SOA     dns.example.test. root.example.test. (
+                                1         ; Serial
+                           604800         ; Refresh
+                            86400         ; Retry
+                          2419200         ; Expire
+                           604800 )       ; Negative Cache TTL
+          ;
+          @   IN  NS      dns.example.test.
+          dns IN  A       192.168.58.10
+        dest: /etc/bind/db.example.test
+        owner: root
+        group: bind
+        mode: '0664'
+
+    - name: Create the initial reverse zone file (db.192.168.58)
+      ansible.builtin.copy:
+        content: |
+          $TTL 604800
+          @   IN  SOA     dns.example.test. root.example.test. (
+                                1         ; Serial
+                           604800         ; Refresh
+                            86400         ; Retry
+                          2419200         ; Expire
+                           604800 )       ; Negative Cache TTL
+          ;
+          @   IN  NS      dns.example.test.
+          10  IN  PTR     dns.example.test.
+        dest: /etc/bind/db.192.168.58
+        owner: root
+        group: bind
+        mode: '0664'
+                
+    - name: Allow secure updates for the forward DNS zone
+      ansible.builtin.blockinfile:
+        path: /etc/bind/named.conf.local
+        marker: "# {mark} ANSIBLE MANAGED ZONE example.test"
+        block: |
+          zone "example.test" {
+              type master;
+              file "/etc/bind/db.example.test";
+              allow-update { key "ddns-key"; };
+          };
+        state: present
+        
+    - name: Allow secure updates for the reverse DNS zone
+      ansible.builtin.blockinfile:
+        path: /etc/bind/named.conf.local
+        marker: "# {mark} ANSIBLE MANAGED ZONE 58.168.192.in-addr.arpa"
+        block: |
+          zone "58.168.192.in-addr.arpa" {
+              type master;
+              file "/etc/bind/db.192.168.58";
+              allow-update { key "ddns-key"; };
+          };
+        state: present
+        
+    - name: Restart the BIND9 service to apply changes
+      ansible.builtin.service:
+        name: bind9
+        state: restarted
+- name: Configure the ISC DHCP Server
+  hosts: dhcp_servers
+  become: yes
+
+  pre_tasks:
+    - name: Ensure ISC DHCP Server is installed
+      ansible.builtin.apt:
+        name: 
+          - isc-dhcp-server
+        state: present
+        update_cache: yes
+
+  tasks:
+    
+    - name: Copy the TSIG key from the controller to the DHCP server
+      ansible.builtin.copy:
+        src: "ansible/fetched_keys/ddns.key"
+        dest: /etc/dhcp/ddns.key
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Configure global DDNS and subnet in dhcpd.conf
+      ansible.builtin.blockinfile:
+        path: /etc/dhcp/dhcpd.conf
+        marker: "# {mark} ANSIBLE MANAGED DDNS BLOCK"
+        block: |
+          ddns-update-style interim;
+          include "/etc/dhcp/ddns.key";
+          
+          subnet 192.168.58.0 netmask 255.255.255.0 {
+            range 192.168.58.100 192.168.58.200;
+            option routers 192.168.58.1;
+            option domain-name-servers 192.168.58.10;
+            option domain-name "example.test";
+          
+            zone example.test. {
+              primary 192.168.58.10;
+              key "ddns-key";
+            }
+          
+            zone 58.168.192.in-addr.arpa. {
+              primary 192.168.58.10;
+              key "ddns-key";
+            }
+          }
+        state: present
+        
+    - name: Restart the ISC DHCP service to apply changes
+      ansible.builtin.service:
+        name: isc-dhcp-server 
+        state: restarted
