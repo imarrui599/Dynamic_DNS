@@ -1,7 +1,0 @@
----
-domain_name: "example.test"
-dns_server_ip: "192.168.58.10"
-tsig_key_name: "ddns-key"
-tsig_algorithm: "hmac-sha256"
-# Clave de ejemplo. 
-tsig_secret: "OQ4d/z4O0b/i2wDq7vO8/0iM+2O5w5E5i7+0o5o5O5o="
