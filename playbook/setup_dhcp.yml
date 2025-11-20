@@ -1,0 +1,60 @@
+---
+- name: Configurar Servidor DHCP
+  hosts: dhcp_servers
+  become: yes
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Instalar paquetes DHCP
+      apt:
+        name: isc-dhcp-server
+        state: present
+        update_cache: yes
+
+    # En Ubuntu/Vagrant la interfaz privada suele ser eth1 o enp0s8. 
+    # Usamos un shell seguro para detectarla si eth1 falla, o forzamos eth1.
+    - name: Configurar interfaz DHCPv4
+      lineinfile:
+        path: /etc/default/isc-dhcp-server
+        regexp: '^INTERFACESv4='
+        line: 'INTERFACESv4="eth1"'
+
+    - name: Configurar dhcpd.conf
+      copy:
+        dest: /etc/dhcp/dhcpd.conf
+        content: |
+          key "{{ tsig_key_name }}" {
+              algorithm {{ tsig_algorithm }};
+              secret "{{ tsig_secret }}";
+          }
+
+          ddns-update-style interim;
+          ddns-updates on;
+          ddns-domainname "{{ domain_name }}.";
+          ddns-rev-domainname "58.168.192.in-addr.arpa.";
+          update-static-leases on;
+
+          option domain-name "{{ domain_name }}";
+          option domain-name-servers {{ dns_server_ip }};
+          default-lease-time 600;
+          max-lease-time 7200;
+          authoritative;
+
+          subnet 192.168.58.0 netmask 255.255.255.0 {
+              range 192.168.58.100 192.168.58.200;
+              option routers 192.168.58.1;
+              
+              zone {{ domain_name }}. {
+                  primary {{ dns_server_ip }};
+                  key "{{ tsig_key_name }}";
+              }
+              
+              zone 58.168.192.in-addr.arpa. {
+                  primary {{ dns_server_ip }};
+                  key "{{ tsig_key_name }}";
+              }
+          }
+
+    - name: Reiniciar DHCP
+      service: name=isc-dhcp-server state=restarted

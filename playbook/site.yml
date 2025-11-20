@@ -1,0 +1,3 @@
+---
+- import_playbook: setup_dns.yml
+- import_playbook: setup_dhcp.yml
