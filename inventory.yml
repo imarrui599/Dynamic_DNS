@@ -1,14 +1,17 @@
-
 all:
-  hosts:
-    dns:
-      ansible_host: 192.168.58.10
-    dhcp:
-      ansible_host: 192.168.58.20
+  vars:
+    ansible_user: vagrant
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    
   children:
     dns_servers:
       hosts:
         dns:
+          ansible_host: 192.168.58.10
+          ansible_ssh_private_key_file: .vagrant/machines/dns/virtualbox/private_key
+          
     dhcp_servers:
       hosts:
         dhcp:
+          ansible_host: 192.168.58.20
+          ansible_ssh_private_key_file: .vagrant/machines/dhcp/virtualbox/private_key
